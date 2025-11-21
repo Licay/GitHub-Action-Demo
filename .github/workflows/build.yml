@@ -1,0 +1,65 @@
+name: Build and Release
+
+# Trigger the workflow on push of version tags
+on:
+  push:
+    tags:
+      - 'v*' # match version tags like v1.0, v2.1, etc.
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:  # key: set minimal required permissions
+      contents: write  # to create releases
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # ensure full git history
+
+      - name: Set up build environment (Optional)
+        run: |
+          echo "Optional: install build dependencies here"
+          sudo apt update
+          sudo apt install -y jq tree
+
+      - name: Execute build script
+        run: |
+          echo "Starting build script..."
+          # ensure the run script is executable
+          mkdir -p out
+          chmod +x ./run
+          ./run
+        shell: bash
+
+      - name: Generate out directory listing
+        id: dir-list
+        run: |
+          echo "Generating out directory listing..."
+          # if out/* not exist, exit with error
+          if [ -z "$(ls -A out/)" ]; then
+            echo "Error: out/ directory is empty!"
+            exit 1
+          fi
+          echo "Contents of out/:"
+          tree -L 1 out
+          tools/release-notes-generator.sh > release-notes.md
+        shell: bash
+
+      - name: Package the output directory
+        run: |
+          echo "Packing out directory to out.tar.gz..."
+          tar -czf out.tar.gz -C out .
+
+      - name: Create and Publish Release
+        id: create-release
+        uses: softprops/action-gh-release@v2
+        with:
+          # auto-generate release tag from the pushed tag
+          name: Release ${{ github.ref_name }}
+          body_path: release-notes.md
+          # Upload the packaged output directory as a release asset
+          files: out.tar.gz
+        # Set to true if this is a prerelease
+        # prerelease: true
